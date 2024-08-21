@@ -35,6 +35,8 @@ int main(int argc, char *argv[]) {
     zmq::socket_t sub_socket(context, zmq::socket_type::sub);
     sub_socket.connect("tcp://localhost:5555");
     sub_socket.set(zmq::sockopt::subscribe, topic);
+    zmq::socket_t push_socket(context, zmq::socket_type::push);
+    push_socket.connect("tcp://localhost:5557");
 
     std::unordered_map<std::string, std::string> kvmap;
 
@@ -58,17 +60,37 @@ int main(int argc, char *argv[]) {
         std::cout << "Received " << kvmsg.dump() << std::endl;
         kvmsg.store(kvmap);
     }
+    zmq::pollitem_t items[] = {
+        {sub_socket, 0, ZMQ_POLLIN, 0},  // 0
+    };
+    auto last_sent_tp = std::chrono::steady_clock::now();
+    auto next = last_sent_tp + std::chrono::milliseconds(100);
     while (true) {
         try {
-            KVMsg kvmsg;
-            int ret = kvmsg.recv(sub_socket);
-            if (!ret) {
-                break;  //  Interrupted
+            zmq::poll(&items[0], 1, std::chrono::milliseconds(100));
+            if (items[0].revents & ZMQ_POLLIN) {
+                KVMsg kvmsg;
+                int ret = kvmsg.recv(sub_socket);
+                if (!ret) {
+                    break;  //  Interrupted
+                }
+                if (kvmsg.sequence() > sequence) {
+                    sequence = kvmsg.sequence();
+                    kvmsg.store(kvmap);
+                    std::cout << "Received update " << kvmsg.dump() << std::endl;
+                }
             }
-            if (kvmsg.sequence() > sequence) {
-                sequence = kvmsg.sequence();
-                kvmsg.store(kvmap);
-                std::cout << "Received update " << kvmsg.dump() << std::endl;
+            if (std::chrono::steady_clock::now() >= next) {
+                static char letter = 'A';
+                int value = rand() % 1000000;
+                KVMsg kvmsg(std::string(1, letter), std::to_string(value), 0);
+                kvmsg.send(push_socket);
+                std::cout << "Publishing update " << kvmsg.dump() << std::endl;
+                letter++;
+                if (letter > 'Z') {
+                    letter = 'A';
+                }
+                next += std::chrono::milliseconds(100);
             }
         } catch (zmq::error_t &e) {
             std::cout << "interrupt received, proceeding..." << std::endl;
@@ -80,6 +102,8 @@ int main(int argc, char *argv[]) {
             break;
         }
     }
+    push_socket.set(zmq::sockopt::linger, 0);
+    push_socket.close();
     sub_socket.close();
     dealer_socket.close();
     context.shutdown();

@@ -23,19 +23,27 @@ void catchSignals() {
 }
 
 void stateManager(zmq::context_t &context) {
-    zmq::socket_t pair_socket(context, zmq::socket_type::pair);
-    pair_socket.connect("inproc://updates");
-    pair_socket.send(zmq::str_buffer("READY"));
+}
+
+int main(int argc, char *argv[]) {
+    catchSignals();
+    zmq::context_t context(1);
+
+    zmq::socket_t pub_socket(context, zmq::socket_type::pub);
+    pub_socket.bind("tcp://localhost:5555");
 
     zmq::socket_t router_socket(context, zmq::socket_type::router);
     router_socket.set(zmq::sockopt::router_mandatory, 1);
     router_socket.bind("tcp://localhost:5556");
 
-    std::unordered_map<std::string, std::string> kvmap;
+    zmq::socket_t pull_socket(context, zmq::socket_type::pull);
+    pull_socket.bind("tcp://localhost:5557");
+
     uint64_t sequence = 0;
 
+    std::unordered_map<std::string, std::string> kvmap;
     zmq::pollitem_t items[] = {
-        {pair_socket, 0, ZMQ_POLLIN, 0},   // 0
+        {pull_socket, 0, ZMQ_POLLIN, 0},   // 0
         {router_socket, 0, ZMQ_POLLIN, 0}  // 1
     };
     //  Process messages from both sockets
@@ -45,14 +53,15 @@ void stateManager(zmq::context_t &context) {
 
         if (items[0].revents & ZMQ_POLLIN) {
             KVMsg kvmsg;
-            bool ret = kvmsg.recv(pair_socket);
+            bool ret = kvmsg.recv(pull_socket);
             if (!ret) {
-                std::cout << "Error receiving KVMsg from pair socket" << std::endl;
+                std::cout << "Error receiving KVMsg from pull socket" << std::endl;
                 break;
             }
-            std::cout << "Updating state " << kvmsg.dump() << std::endl;
+            kvmsg.set_sequence(++sequence);
+            std::cout << "Updating state and publishing " << kvmsg.dump() << std::endl;
             kvmsg.store(kvmap);
-            sequence = kvmsg.sequence();
+            kvmsg.send(pub_socket);
         }
         if (items[1].revents & ZMQ_POLLIN) {
             // Get identity
@@ -94,59 +103,9 @@ void stateManager(zmq::context_t &context) {
     }
 
     router_socket.set(zmq::sockopt::linger, 0);
-    pair_socket.set(zmq::sockopt::linger, 0);
     router_socket.close();
-    pair_socket.close();
-}
-
-int main(int argc, char *argv[]) {
-    catchSignals();
-    zmq::context_t context(1);
-
-    zmq::socket_t pub_socket(context, zmq::socket_type::pub);
-    pub_socket.bind("tcp://localhost:5555");
-    zmq::socket_t pair_socket(context, zmq::socket_type::pair);
-    pair_socket.bind("inproc://updates");
-
-    std::thread state_manager_thread(stateManager, std::ref(context));
-    zmq::message_t ready_msg;
-    if (pair_socket.recv(ready_msg).has_value()) {
-        std::cout << "Got " << ready_msg.to_string() << std::endl;
-    }
-
-    uint64_t sequence = 0;
-
-    while (true) {
-        try {
-            static char letter = 'A';
-            // Send key
-            pub_socket.send(zmq::buffer(std::string(1, letter)), zmq::send_flags::sndmore);
-            pair_socket.send(zmq::buffer(std::string(1, letter)), zmq::send_flags::sndmore);
-            // Send sequence number
-            pub_socket.send(zmq::buffer(&sequence, sizeof(sequence)), zmq::send_flags::sndmore);
-            pair_socket.send(zmq::buffer(&sequence, sizeof(sequence)), zmq::send_flags::sndmore);
-            // Send value
-            int value = rand() % 1000000;
-            pub_socket.send(zmq::buffer(std::to_string(value)), zmq::send_flags::none);
-            pair_socket.send(zmq::buffer(std::to_string(value)), zmq::send_flags::none);
-            sequence++;
-            letter++;
-            if (letter > 'Z') {
-                letter = 'A';
-            }
-        } catch (zmq::error_t &e) {
-            std::cout << "interrupt received, proceeding..." << std::endl;
-        }
-
-        if (interrupted) {
-            std::cout << "interrupt received, killing program..." << std::endl;
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
+    pull_socket.close();
     pub_socket.close();
-    pair_socket.close();
-    state_manager_thread.join();
     context.shutdown();
     context.close();
     return 0;
