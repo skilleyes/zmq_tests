@@ -30,7 +30,7 @@ void stateManager(zmq::context_t &context) {
     router_socket.bind("tcp://localhost:5556");
 
     std::unordered_map<std::string, std::string> kvmap;
-    int64_t sequence = 0;
+    uint64_t sequence = 0;
 
     zmq::pollitem_t items[] = {
         {pair_socket, 0, ZMQ_POLLIN, 0},   // 0
@@ -51,8 +51,9 @@ void stateManager(zmq::context_t &context) {
             }
             std::string key, value;
             key = recv_msgs.front().to_string();
+            std::memcpy(&sequence, recv_msgs[1].data(), sizeof(uint64_t));
             value = recv_msgs.back().to_string();
-            std::cout << "Updating state " << key << " : " << value << std::endl;
+            std::cout << "Updating state " << key << " : " << value << " (" << sequence << ")" << std::endl;
             kvmap[key] = value;
         }
         if (items[1].revents & ZMQ_POLLIN) {
@@ -80,11 +81,13 @@ void stateManager(zmq::context_t &context) {
                 std::cout << "Sending entry " << entry.first << " to " << identity << std::endl;
                 router_socket.send(zmq::buffer(identity), zmq::send_flags::sndmore);
                 router_socket.send(zmq::buffer(entry.first), zmq::send_flags::sndmore);
+                router_socket.send(zmq::message_t(0), zmq::send_flags::sndmore);
                 router_socket.send(zmq::buffer(entry.second), zmq::send_flags::none);
             }
-            std::cout << "Sending KTHXBAI" << std::endl;
+            std::cout << "Sending KTHXBAI with sequence " << sequence << std::endl;
             router_socket.send(zmq::buffer(identity), zmq::send_flags::sndmore);
             router_socket.send(zmq::str_buffer("KTHXBAI"), zmq::send_flags::sndmore);
+            router_socket.send(zmq::buffer(&sequence, sizeof(sequence)), zmq::send_flags::sndmore);
             router_socket.send(zmq::str_buffer(""), zmq::send_flags::none);
         }
         if (interrupted) {
@@ -114,14 +117,22 @@ int main(int argc, char *argv[]) {
         std::cout << "Got " << ready_msg.to_string() << std::endl;
     }
 
+    uint64_t sequence = 0;
+
     while (true) {
         try {
             static char letter = 'A';
+            // Send key
             pub_socket.send(zmq::buffer(std::string(1, letter)), zmq::send_flags::sndmore);
             pair_socket.send(zmq::buffer(std::string(1, letter)), zmq::send_flags::sndmore);
+            // Send sequence number
+            pub_socket.send(zmq::buffer(&sequence, sizeof(sequence)), zmq::send_flags::sndmore);
+            pair_socket.send(zmq::buffer(&sequence, sizeof(sequence)), zmq::send_flags::sndmore);
+            // Send value
             int value = rand() % 1000000;
             pub_socket.send(zmq::buffer(std::to_string(value)), zmq::send_flags::none);
             pair_socket.send(zmq::buffer(std::to_string(value)), zmq::send_flags::none);
+            sequence++;
             letter++;
             if (letter > 'Z') {
                 letter = 'A';

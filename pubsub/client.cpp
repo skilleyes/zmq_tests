@@ -39,7 +39,7 @@ int main(int argc, char *argv[]) {
     catchSignals();
 
     //  Get state snapshot
-    int64_t sequence = 0;
+    uint64_t sequence = 0;
     dealer_socket.send(zmq::str_buffer("ICANHAZ?"));
     std::cout << "Requesting snapshot" << std::endl;
     while (true) {
@@ -50,9 +50,9 @@ int main(int argc, char *argv[]) {
         }
         std::string key, value;
         key = recv_msgs.front().to_string();
+        std::memcpy(&sequence, recv_msgs[1].data(), sizeof(uint64_t));
         value = recv_msgs.back().to_string();
         if (key == "KTHXBAI") {
-            // TODO sequence = kvmsg_sequence (kvmsg);
             std::cout << "Received snapshot = " << sequence << std::endl;
             break;  //  Done
         }
@@ -69,10 +69,15 @@ int main(int argc, char *argv[]) {
                 break;
             }
             std::string key, value;
+            uint64_t received_sequence;
             key = recv_msgs.front().to_string();
+            std::memcpy(&received_sequence, recv_msgs[1].data(), sizeof(uint64_t));
             value = recv_msgs.back().to_string();
-            std::cout << "Received " << key << " : " << value << std::endl;
-            kvmap[key] = value;
+            std::cout << "Received " << key << " : " << value << " (" << received_sequence << ")" << std::endl;
+            if (received_sequence > sequence) {
+                kvmap[key] = value;
+                sequence = received_sequence;
+            }
         } catch (zmq::error_t &e) {
             std::cout << "interrupt received, proceeding..." << std::endl;
             std::cout << e.what() << std::endl;
