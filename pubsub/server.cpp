@@ -82,13 +82,22 @@ int main(int argc, char *argv[]) {
                 std::cout << "Bad request, aborting : " << message.to_string();
                 break;
             }
-            // Send all entries
-            std::cout << "Sending all entries" << std::endl;
+            // Get subtree
+            if (!router_socket.recv(message).has_value()) {
+                break;
+            }
+            std::string subtree = message.to_string();
+            std::cout << "Subtree request " << subtree << std::endl;
+
+            // Send entries
+            std::cout << "Sending entries" << std::endl;
             for (const auto &entry : kvmap) {
-                std::cout << "Sending entry " << entry.first << " to " << identity << std::endl;
-                router_socket.send(zmq::buffer(identity), zmq::send_flags::sndmore);
-                KVMsg kvmsg(entry.first, entry.second, 0);
-                kvmsg.send(router_socket);
+                if (subtree.empty() || entry.first.find(subtree) == 0) {
+                    std::cout << "Sending entry " << entry.first << " to " << identity << std::endl;
+                    router_socket.send(zmq::buffer(identity), zmq::send_flags::sndmore);
+                    KVMsg kvmsg(entry.first, entry.second, 0);
+                    kvmsg.send(router_socket);
+                }
             }
             std::cout << "Sending KTHXBAI with sequence " << sequence << std::endl;
             router_socket.send(zmq::buffer(identity), zmq::send_flags::sndmore);

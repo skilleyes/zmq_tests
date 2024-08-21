@@ -24,17 +24,17 @@ void catchSignals() {
 int main(int argc, char *argv[]) {
     zmq::context_t context(1);
 
-    std::string topic = "";
+    std::string subtree = "";
     if (argc > 1) {
-        topic = argv[1];
-        std::cout << topic << std::endl;
+        subtree = argv[1];
+        std::cout << subtree << std::endl;
     }
 
     zmq::socket_t dealer_socket(context, zmq::socket_type::dealer);
     dealer_socket.connect("tcp://localhost:5556");
     zmq::socket_t sub_socket(context, zmq::socket_type::sub);
     sub_socket.connect("tcp://localhost:5555");
-    sub_socket.set(zmq::sockopt::subscribe, topic);
+    sub_socket.set(zmq::sockopt::subscribe, subtree);
     zmq::socket_t push_socket(context, zmq::socket_type::push);
     push_socket.connect("tcp://localhost:5557");
 
@@ -44,7 +44,8 @@ int main(int argc, char *argv[]) {
 
     //  Get state snapshot
     uint64_t sequence = 0;
-    dealer_socket.send(zmq::str_buffer("ICANHAZ?"));
+    dealer_socket.send(zmq::str_buffer("ICANHAZ?"), zmq::send_flags::sndmore);
+    dealer_socket.send(zmq::buffer(subtree));
     std::cout << "Requesting snapshot" << std::endl;
     while (true) {
         KVMsg kvmsg;
@@ -83,7 +84,7 @@ int main(int argc, char *argv[]) {
             if (std::chrono::steady_clock::now() >= next) {
                 static char letter = 'A';
                 int value = rand() % 1000000;
-                KVMsg kvmsg(std::string(1, letter), std::to_string(value), 0);
+                KVMsg kvmsg(subtree + std::string(1, letter), std::to_string(value), 0);
                 kvmsg.send(push_socket);
                 std::cout << "Publishing update " << kvmsg.dump() << std::endl;
                 letter++;
