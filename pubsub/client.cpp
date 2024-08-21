@@ -6,6 +6,8 @@
 #include <zmq.hpp>
 #include <zmq_addon.hpp>
 
+#include "kvmsg.h"
+
 bool interrupted = false;
 
 void signalHandler(int signal_value) {
@@ -43,40 +45,30 @@ int main(int argc, char *argv[]) {
     dealer_socket.send(zmq::str_buffer("ICANHAZ?"));
     std::cout << "Requesting snapshot" << std::endl;
     while (true) {
-        zmq::multipart_t recv_msgs;
-        bool ret = recv_msgs.recv(dealer_socket);
+        KVMsg kvmsg;
+        bool ret = kvmsg.recv(dealer_socket);
         if (!ret) {
             break;  //  Interrupted
         }
-        std::string key, value;
-        key = recv_msgs.front().to_string();
-        std::memcpy(&sequence, recv_msgs[1].data(), sizeof(uint64_t));
-        value = recv_msgs.back().to_string();
-        if (key == "KTHXBAI") {
-            std::cout << "Received snapshot = " << sequence << std::endl;
+        if (kvmsg.key() == "KTHXBAI") {
+            std::cout << "Received snapshot = " << kvmsg.sequence() << std::endl;
+            sequence = kvmsg.sequence();
             break;  //  Done
         }
-        std::cout << "Received " << key << " : " << value << std::endl;
-        kvmap[key] = value;
+        std::cout << "Received " << kvmsg.dump() << std::endl;
+        kvmsg.store(kvmap);
     }
     while (true) {
         try {
-            zmq::multipart_t recv_msgs;
-
-            bool ret = recv_msgs.recv(sub_socket);
+            KVMsg kvmsg;
+            int ret = kvmsg.recv(sub_socket);
             if (!ret) {
-                std::cout << "Error receiving multipart message" << std::endl;
-                break;
+                break;  //  Interrupted
             }
-            std::string key, value;
-            uint64_t received_sequence;
-            key = recv_msgs.front().to_string();
-            std::memcpy(&received_sequence, recv_msgs[1].data(), sizeof(uint64_t));
-            value = recv_msgs.back().to_string();
-            std::cout << "Received " << key << " : " << value << " (" << received_sequence << ")" << std::endl;
-            if (received_sequence > sequence) {
-                kvmap[key] = value;
-                sequence = received_sequence;
+            if (kvmsg.sequence() > sequence) {
+                sequence = kvmsg.sequence();
+                kvmsg.store(kvmap);
+                std::cout << "Received update " << kvmsg.dump() << std::endl;
             }
         } catch (zmq::error_t &e) {
             std::cout << "interrupt received, proceeding..." << std::endl;

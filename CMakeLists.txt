@@ -26,8 +26,11 @@ target_link_libraries(broker cppzmq)
 add_executable(standalone_broker standalone_broker.cpp)
 target_link_libraries(standalone_broker cppzmq Threads::Threads)
 
+add_library(kvmsg pubsub/kvmsg.cpp)
+target_link_libraries(kvmsg cppzmq)
+
 add_executable(pubsub pubsub/server.cpp)
-target_link_libraries(pubsub cppzmq)
+target_link_libraries(pubsub kvmsg cppzmq)
 
 add_executable(pubsubclient pubsub/client.cpp)
-target_link_libraries(pubsubclient cppzmq)
+target_link_libraries(pubsubclient kvmsg cppzmq)

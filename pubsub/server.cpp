@@ -7,6 +7,8 @@
 #include <zmq.hpp>
 #include <zmq_addon.hpp>
 
+#include "kvmsg.h"
+
 bool interrupted = false;
 
 void signalHandler(int signal_value) {
@@ -42,19 +44,15 @@ void stateManager(zmq::context_t &context) {
         zmq::poll(&items[0], 2, std::chrono::milliseconds(100));
 
         if (items[0].revents & ZMQ_POLLIN) {
-            zmq::multipart_t recv_msgs;
-
-            bool ret = recv_msgs.recv(pair_socket);
+            KVMsg kvmsg;
+            bool ret = kvmsg.recv(pair_socket);
             if (!ret) {
-                std::cout << "Error receiving multipart message" << std::endl;
+                std::cout << "Error receiving KVMsg from pair socket" << std::endl;
                 break;
             }
-            std::string key, value;
-            key = recv_msgs.front().to_string();
-            std::memcpy(&sequence, recv_msgs[1].data(), sizeof(uint64_t));
-            value = recv_msgs.back().to_string();
-            std::cout << "Updating state " << key << " : " << value << " (" << sequence << ")" << std::endl;
-            kvmap[key] = value;
+            std::cout << "Updating state " << kvmsg.dump() << std::endl;
+            kvmsg.store(kvmap);
+            sequence = kvmsg.sequence();
         }
         if (items[1].revents & ZMQ_POLLIN) {
             // Get identity
@@ -80,9 +78,8 @@ void stateManager(zmq::context_t &context) {
             for (const auto &entry : kvmap) {
                 std::cout << "Sending entry " << entry.first << " to " << identity << std::endl;
                 router_socket.send(zmq::buffer(identity), zmq::send_flags::sndmore);
-                router_socket.send(zmq::buffer(entry.first), zmq::send_flags::sndmore);
-                router_socket.send(zmq::message_t(0), zmq::send_flags::sndmore);
-                router_socket.send(zmq::buffer(entry.second), zmq::send_flags::none);
+                KVMsg kvmsg(entry.first, entry.second, 0);
+                kvmsg.send(router_socket);
             }
             std::cout << "Sending KTHXBAI with sequence " << sequence << std::endl;
             router_socket.send(zmq::buffer(identity), zmq::send_flags::sndmore);
