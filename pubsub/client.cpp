@@ -22,9 +22,15 @@ void catchSignals() {
 int main(int argc, char *argv[]) {
     zmq::context_t context(1);
 
+    std::string topic = "";
+    if (argc > 1) {
+        topic = argv[1];
+        std::cout << topic << std::endl;
+    }
+
     zmq::socket_t sub_socket(context, zmq::socket_type::sub);
     sub_socket.connect("tcp://localhost:5555");
-    sub_socket.set(zmq::sockopt::subscribe, "A");
+    sub_socket.set(zmq::sockopt::subscribe, topic);
 
     catchSignals();
     while (true) {
