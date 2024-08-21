@@ -1,7 +1,7 @@
 //  Server test Ryan
 
-#include <csignal>
 #include <chrono>
+#include <csignal>
 #include <iostream>
 #include <thread>
 #include <zmq.hpp>
@@ -25,13 +25,19 @@ int main(int argc, char *argv[]) {
     zmq::socket_t pub_socket(context, zmq::socket_type::pub);
     pub_socket.bind("tcp://localhost:5555");
 
+    std::unordered_map<std::string, std::string> kvmap;
+
     catchSignals();
     while (true) {
         try {
-            pub_socket.send(zmq::str_buffer("A"), zmq::send_flags::sndmore);
-            pub_socket.send(zmq::buffer("value for A"), zmq::send_flags::none);
-            pub_socket.send(zmq::str_buffer("B"), zmq::send_flags::sndmore);
-            pub_socket.send(zmq::buffer("value for B"), zmq::send_flags::none);
+            static char letter = 'A';
+            pub_socket.send(zmq::buffer(std::string(1, letter)), zmq::send_flags::sndmore);
+            int value = rand() % 1000000;
+            pub_socket.send(zmq::buffer(std::to_string(value)), zmq::send_flags::none);
+            letter++;
+            if (letter > 'Z') {
+                letter = 'A';
+            }
         } catch (zmq::error_t &e) {
             std::cout << "interrupt received, proceeding..." << std::endl;
         }
@@ -40,7 +46,7 @@ int main(int argc, char *argv[]) {
             std::cout << "interrupt received, killing program..." << std::endl;
             break;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     pub_socket.close();
     context.shutdown();

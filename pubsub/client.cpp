@@ -32,6 +32,8 @@ int main(int argc, char *argv[]) {
     sub_socket.connect("tcp://localhost:5555");
     sub_socket.set(zmq::sockopt::subscribe, topic);
 
+    std::unordered_map<std::string, std::string> kvmap;
+
     catchSignals();
     while (true) {
         try {
@@ -42,8 +44,11 @@ int main(int argc, char *argv[]) {
                 std::cout << "Error receiving multipart message" << std::endl;
                 break;
             }
-            std::cout << "Received " << recv_msgs.front().to_string() << " : "
-                      << recv_msgs.back().to_string() << std::endl;
+            std::string key, value;
+            key = recv_msgs.front().to_string();
+            value = recv_msgs.back().to_string();
+            std::cout << "Received " << key << " : " << value << std::endl;
+            kvmap[key] = value;
         } catch (zmq::error_t &e) {
             std::cout << "interrupt received, proceeding..." << std::endl;
             std::cout << e.what() << std::endl;
