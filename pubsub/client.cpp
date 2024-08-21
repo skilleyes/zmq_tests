@@ -28,6 +28,8 @@ int main(int argc, char *argv[]) {
         std::cout << topic << std::endl;
     }
 
+    zmq::socket_t dealer_socket(context, zmq::socket_type::dealer);
+    dealer_socket.connect("tcp://localhost:5556");
     zmq::socket_t sub_socket(context, zmq::socket_type::sub);
     sub_socket.connect("tcp://localhost:5555");
     sub_socket.set(zmq::sockopt::subscribe, topic);
@@ -35,6 +37,28 @@ int main(int argc, char *argv[]) {
     std::unordered_map<std::string, std::string> kvmap;
 
     catchSignals();
+
+    //  Get state snapshot
+    int64_t sequence = 0;
+    dealer_socket.send(zmq::str_buffer("ICANHAZ?"));
+    std::cout << "Requesting snapshot" << std::endl;
+    while (true) {
+        zmq::multipart_t recv_msgs;
+        bool ret = recv_msgs.recv(dealer_socket);
+        if (!ret) {
+            break;  //  Interrupted
+        }
+        std::string key, value;
+        key = recv_msgs.front().to_string();
+        value = recv_msgs.back().to_string();
+        if (key == "KTHXBAI") {
+            // TODO sequence = kvmsg_sequence (kvmsg);
+            std::cout << "Received snapshot = " << sequence << std::endl;
+            break;  //  Done
+        }
+        std::cout << "Received " << key << " : " << value << std::endl;
+        kvmap[key] = value;
+    }
     while (true) {
         try {
             zmq::multipart_t recv_msgs;
@@ -60,6 +84,7 @@ int main(int argc, char *argv[]) {
         }
     }
     sub_socket.close();
+    dealer_socket.close();
     context.shutdown();
     context.close();
     return 0;
