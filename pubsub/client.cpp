@@ -37,9 +37,9 @@ int main(int argc, char *argv[]) {
     catchSignals();
     while (true) {
         try {
-            std::vector<zmq::message_t> recv_msgs;
+            zmq::multipart_t recv_msgs;
 
-            const auto ret = zmq::recv_multipart(sub_socket, std::back_inserter(recv_msgs));
+            bool ret = recv_msgs.recv(sub_socket);
             if (!ret) {
                 std::cout << "Error receiving multipart message" << std::endl;
                 break;
