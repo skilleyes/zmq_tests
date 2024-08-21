@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string>
 #include <zmq.hpp>
+#include <zmq_addon.hpp>
 
 bool interrupted = false;
 
@@ -28,10 +29,15 @@ int main(int argc, char *argv[]) {
     catchSignals();
     while (true) {
         try {
-            zmq::message_t topic, message;
-            sub_socket.recv(topic, zmq::recv_flags::none);
-            sub_socket.recv(message, zmq::recv_flags::none);
-            std::cout << "Received " << message.to_string() << " on topic " << topic.to_string() << std::endl;
+            std::vector<zmq::message_t> recv_msgs;
+
+            const auto ret = zmq::recv_multipart(sub_socket, std::back_inserter(recv_msgs));
+            if (!ret) {
+                std::cout << "Error receiving multipart message" << std::endl;
+                break;
+            }
+            std::cout << "Received " << recv_msgs.front().to_string() << " : "
+                      << recv_msgs.back().to_string() << std::endl;
         } catch (zmq::error_t &e) {
             std::cout << "interrupt received, proceeding..." << std::endl;
             std::cout << e.what() << std::endl;
