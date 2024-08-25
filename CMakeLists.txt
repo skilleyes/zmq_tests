@@ -34,3 +34,5 @@ target_link_libraries(pubsub kvmsg cppzmq)
 
 add_executable(pubsubclient pubsub/client.cpp)
 target_link_libraries(pubsubclient kvmsg cppzmq)
+
+add_subdirectory(majordomo)
